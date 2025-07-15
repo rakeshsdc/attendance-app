@@ -1,5 +1,4 @@
-
-# FYUGP Attendance Streamlit App - Phase 5 (Role-based Admin Access)
+# FYUGP Attendance Streamlit App - Phase 5 (Fixed login + date filtering)
 
 import streamlit as st
 import pandas as pd
@@ -40,7 +39,6 @@ if st.sidebar.button("Login"):
         st.sidebar.success("Login successful!")
     else:
         st.sidebar.error("Invalid credentials")
-
 
 if st.session_state.get("logged_in", False):
     st.success(f"Welcome, {st.session_state.teacher_name}! Role: {st.session_state.role.title()}")
@@ -86,9 +84,11 @@ if st.session_state.get("logged_in", False):
             date_range = st.date_input("Select Date Range", [date(2025, 7, 1), date.today()])
             if len(date_range) == 2:
                 start, end = date_range
+                start_dt = pd.to_datetime(start)
+                end_dt = pd.to_datetime(end)
                 filtered = attendance[
                     (attendance["course_id"] == selected_course) &
-                    (pd.to_datetime(attendance["date"]).between(start, end))
+                    (pd.to_datetime(attendance["date"]).between(start_dt, end_dt))
                 ]
                 if not filtered.empty:
                     detailed = pd.merge(filtered, students, on="student_id")[
@@ -109,6 +109,7 @@ if st.session_state.get("logged_in", False):
                     st.download_button("📥 Download Summary", summary.to_csv(index=False), "summary.csv")
                 else:
                     st.info("No records found.")
+
     elif st.session_state.role in ["admin", "dept_admin"]:
         st.subheader("🏛 Admin Dashboard")
         if st.session_state.role == "admin":
@@ -124,9 +125,11 @@ if st.session_state.get("logged_in", False):
         date_range = st.date_input("Select Date Range", [date(2025, 7, 1), date.today()])
         if len(date_range) == 2:
             start, end = date_range
+            start_dt = pd.to_datetime(start)
+            end_dt = pd.to_datetime(end)
             filtered = attendance[
                 (attendance["student_id"].isin(major_ids)) &
-                (pd.to_datetime(attendance["date"]).between(start, end))
+                (pd.to_datetime(attendance["date"]).between(start_dt, end_dt))
             ]
             if not filtered.empty:
                 detail_all = pd.merge(filtered, students, on="student_id")[

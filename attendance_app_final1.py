@@ -37,7 +37,7 @@ if st.sidebar.button("Login"):
         st.session_state.role = match.iloc[0]["role"]
         st.session_state.department = match.iloc[0].get("department", "")
         st.sidebar.success("Login successful!")
-            st.write("🔍 Debug:", st.session_state.teacher_id, "-", st.session_state.role)
+        st.write("🔍 Debug:", st.session_state.teacher_id, "-", st.session_state.role)
     else:
         st.sidebar.error("Invalid credentials")
 

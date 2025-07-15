@@ -23,12 +23,14 @@ students, courses, teachers, attendance = load_data()
 
 # --- Login ---
 st.sidebar.header("🔐 Login")
-email = st.sidebar.text_input("Email")
-password = st.sidebar.text_input("Password", type="password")
+email_input = st.sidebar.text_input("Email").strip().lower()
+password_input = st.sidebar.text_input("Password", type="password").strip()
 
-logged_in = False
 if st.sidebar.button("Login"):
-    match = teachers[(teachers["email"] == email) & (teachers["password"] == password)]
+    match = teachers[
+        (teachers["email"].str.strip().str.lower() == email_input) &
+        (teachers["password"].astype(str).str.strip() == password_input)
+    ]
     if not match.empty:
         st.session_state.logged_in = True
         st.session_state.teacher_name = match.iloc[0]["name"]
@@ -38,6 +40,7 @@ if st.sidebar.button("Login"):
         st.sidebar.success("Login successful!")
     else:
         st.sidebar.error("Invalid credentials")
+
 
 if st.session_state.get("logged_in", False):
     st.success(f"Welcome, {st.session_state.teacher_name}! Role: {st.session_state.role.title()}")

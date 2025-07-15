@@ -1,0 +1,5 @@
+student_id,name,major_course,minor1_course,minor2_course,mdc_course,vac_course
+S001,Arjun,MJPHY,MNCHE,MNMAT,MDCENG,VACCHE
+S002,Vishal,MJPHY,MNCHE,MNMAT,MDCENG,VACENG
+S003,Bilal,MJCHE,MNPHY,MNMAT,MDCPHY,VACPHY
+S004,Jithin,MJCHE,MNPHY,MNMAT,MDCMAT,VACCHE

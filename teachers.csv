@@ -1,0 +1,7 @@
+teacher_id,name,email,password,role,department
+T001,Dr.Rakesh,rakesh@gmail.com,1234,admin,
+T002,Dr.Damu,damu@gmail.com,1234,teacher,MJCHE
+T003,Dr.Arun,arun@gmail.com,1234,admin,
+T004,Dr.Mahesh,mahesh@gmail.com,1234,teacher,MJPHY
+T005,Dr.Rajesh,rajesh@gmail.com,1234,teacher,
+T006,Dr.Devi,devi@gmail.com,1234,teacher,

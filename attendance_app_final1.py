@@ -4,22 +4,35 @@ from datetime import date, datetime
 
 st.set_page_config(page_title="FYUGP Attendance", layout="wide")
 
+# ------------------- Title & Description -------------------
+st.title("📘 FYUGP Attendance Management System")
+st.markdown("""
+Welcome to the **FYUGP Attendance App**.  
+✅ Track student attendance across Major, Minor, MDC, and VAC courses.  
+✅ Department Admins & Teachers can generate reports.  
+✅ Masked hours, camp exemptions, and multi-status attendance included.
+""")
+
+# ------------------- Load Data -------------------
 @st.cache_data
 def load_data():
     students = pd.read_csv("students.csv")
     teachers = pd.read_csv("teachers.csv")
     courses = pd.read_csv("courses.csv")
+    enrollment = pd.read_csv("enrollment.csv")
     try:
         attendance = pd.read_csv("attendance.csv")
     except:
         attendance = pd.DataFrame(columns=["date", "hour", "course_id", "student_id", "status", "marked_by", "extra_time", "duration"])
     try:
-        camp = pd.read_csv("camp_days.csv", parse_dates=["start_date", "end_date"])
+        camp_days = pd.read_csv("camp_days.csv", parse_dates=["start_date", "end_date"])
     except:
-        camp = pd.DataFrame(columns=["student_id", "start_date", "end_date", "activity"])
-    return students, teachers, courses, attendance, camp
+        camp_days = pd.DataFrame(columns=["student_id", "start_date", "end_date", "activity"])
+    return students, teachers, courses, enrollment, attendance, camp_days
 
-students, teachers, courses, attendance, camp_days = load_data()
+students, teachers, courses, enrollment, attendance, camp_days = load_data()
+
+# ------------------- Login -------------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
@@ -42,150 +55,125 @@ if not st.session_state.logged_in:
             st.rerun()
         else:
             st.sidebar.error("Invalid credentials")
+    st.stop()
 else:
     st.sidebar.write(f"👤 {st.session_state.teacher_name} ({st.session_state.role})")
     if st.sidebar.button("🚪 Logout"):
         for k in list(st.session_state.keys()):
             del st.session_state[k]
         st.rerun()
-    st.title("📘 FYUGP Attendance Management")
-    st.subheader("📝 Take Attendance")
 
-    teacher_courses = courses[courses["teacher_id"] == st.session_state.teacher_id]
-    if not teacher_courses.empty:
-        selected_course = st.selectbox("Select Your Course", teacher_courses["course_id"])
-        enrolled = students[
-            (students["major_course"] == selected_course) |
-            (students["minor1_course"] == selected_course) |
-            (students["minor2_course"] == selected_course) |
-            (students["mdc_course"] == selected_course) |
-            (students["vac_course"] == selected_course)
-        ]
-        if enrolled.empty:
-            st.warning("No students found.")
-        else:
-            sel_date = st.date_input("Select Date", value=date.today())
+# ------------------- Take Attendance (Teachers) -------------------
+if st.session_state.role == "teacher":
+    st.subheader("📘 Take Attendance")
+    assigned_courses = courses[courses["teacher_id"] == st.session_state.teacher_id]
+    if assigned_courses.empty:
+        st.info("You have no assigned courses.")
+    else:
+        selected_course = st.selectbox("Select Course", assigned_courses["course_id"].tolist())
+        selected_date = st.date_input("Date", value=date.today())
 
-            # ✅ Hour masking fix
-            existing = attendance[
-                (attendance["date"] == str(sel_date)) &
-                (attendance["course_id"] == selected_course)
-            ]
-            used_hours = existing["hour"].unique().tolist()
-            hours = [str(h) for h in range(1, 7)]
-            available_hours = [h for h in hours if h not in used_hours]
-            available_hours.append("Extra Hour")
-            sel_hour = st.selectbox("Select Hour", available_hours)
+        # Hour masking
+        attendance["date"] = pd.to_datetime(attendance["date"])
+        taken_hours = attendance[
+            (attendance["course_id"] == selected_course) &
+            (attendance["date"] == pd.to_datetime(selected_date))
+        ]["hour"].tolist()
 
-            extra_time = ""
-            duration = ""
-            if sel_hour == "Extra Hour":
-                extra_time = st.time_input("Time")
-                duration = st.number_input("Duration (minutes)", 10, 120)
+        hours = [1, 2, 3, 4, 5, 6]
+        available_hours = [h for h in hours if h not in taken_hours]
+        selected_hour = st.selectbox("Hour", available_hours + ["Extra Hour"])
 
-            student_labels = enrolled.apply(lambda x: f"{x['name']} ({x['student_id']})", axis=1).tolist()
-            absent = st.multiselect("Absent", student_labels)
-            nss = st.multiselect("NSS", student_labels)
-            ncc = st.multiselect("NCC", student_labels)
-            club = st.multiselect("Club", student_labels)
+        extra_time = ""
+        duration = ""
+        if selected_hour == "Extra Hour":
+            selected_hour = 0
+            extra_time = st.text_input("Start Time (e.g., 4:00 PM)")
+            duration = st.text_input("Duration (e.g., 1 hour)")
+
+        enrolled_students = enrollment[enrollment["course_id"] == selected_course]["student_id"].tolist()
+        students_list = students[students["student_id"].isin(enrolled_students)]
+
+        if not students_list.empty:
+            st.write("### Mark Attendance (default is Present)")
+            default_status = {sid: "P" for sid in students_list["student_id"]}
+            updated_status = {}
+
+            for _, row in students_list.iterrows():
+                status = st.selectbox(
+                    f"{row['name']} ({row['student_id']})",
+                    ["P", "A", "NSS", "NCC", "Club"],
+                    index=0,
+                    key=f"{row['student_id']}_{selected_hour}"
+                )
+                updated_status[row["student_id"]] = status
 
             if st.button("✅ Submit Attendance"):
-                recs = []
-                for _, row in enrolled.iterrows():
-                    label = f"{row['name']} ({row['student_id']})"
-                    status = "P"
-                    if label in absent: status = "A"
-                    elif label in nss: status = "NSS"
-                    elif label in ncc: status = "NCC"
-                    elif label in club: status = "Club"
-                    recs.append({
-                        "date": str(sel_date), "hour": sel_hour, "course_id": selected_course,
-                        "student_id": row["student_id"], "status": status,
+                new_data = []
+                for sid, status in updated_status.items():
+                    new_data.append({
+                        "date": selected_date,
+                        "hour": selected_hour,
+                        "course_id": selected_course,
+                        "student_id": sid,
+                        "status": status,
                         "marked_by": st.session_state.teacher_id,
-                        "extra_time": str(extra_time), "duration": duration
+                        "extra_time": extra_time,
+                        "duration": duration
                     })
-                # ✅ Overwrite previous entry
-                attendance = attendance[~(
-                    (attendance["date"] == str(sel_date)) &
-                    (attendance["hour"] == sel_hour) &
-                    (attendance["course_id"] == selected_course)
-                )]
-                attendance = pd.concat([attendance, pd.DataFrame(recs)], ignore_index=True)
-                attendance.to_csv("attendance.csv", index=False)
-                st.success("Attendance saved.")
-    # ---- CAMP DAY ENTRY ----
-    if st.session_state.role in ["admin", "dept_admin"]:
-        st.subheader("🎪 Manage Camp Days")
-        label_list = students.apply(lambda x: f"{x['name']} ({x['student_id']})", axis=1).tolist()
-        s = st.selectbox("Select Student", label_list)
-        sid = s.split("(")[-1].strip(")")
-        d1 = st.date_input("Camp Start")
-        d2 = st.date_input("Camp End")
-        act = st.selectbox("Activity", ["NSS", "NCC", "Club"])
-        if st.button("➕ Add Camp"):
-            new = pd.DataFrame([{"student_id": sid, "start_date": d1, "end_date": d2, "activity": act}])
-            camp_days = pd.concat([camp_days, new], ignore_index=True)
-            camp_days.to_csv("camp_days.csv", index=False)
-            st.success("Camp added.")
-            st.rerun()
 
-        st.write("📋 Existing Camp Records")
-        for i, row in camp_days.iterrows():
-            col1, col2 = st.columns([6, 1])
-            with col1:
-                st.write(f"{row['student_id']} - {row['activity']} ({row['start_date'].date()} → {row['end_date'].date()})")
-            with col2:
-                if st.button("🗑️ Delete", key=f"camp{i}"):
-                    camp_days.drop(i, inplace=True)
-                    camp_days.to_csv("camp_days.csv", index=False)
-                    st.rerun()
-    # ---- REPORTS ----
+                new_df = pd.DataFrame(new_data)
+                attendance = pd.concat([attendance, new_df], ignore_index=True)
+                attendance.to_csv("attendance.csv", index=False)
+                st.success("✅ Attendance recorded.")
+                st.rerun()
+        else:
+            st.warning("⚠️ No students enrolled in this course.")
+
+# ------------------- Admin / Dept Admin Reports -------------------
+if st.session_state.role in ["admin", "dept_admin"]:
     st.subheader("📊 Reports")
     from_dt = st.date_input("From Date", value=date.today())
     to_dt = st.date_input("To Date", value=date.today())
 
-    att = attendance.copy()
-    att["date"] = pd.to_datetime(att["date"])
-    att = att[(att["date"] >= pd.to_datetime(from_dt)) & (att["date"] <= pd.to_datetime(to_dt))]
+    attendance["date"] = pd.to_datetime(attendance["date"])
+    filtered = attendance[
+        (attendance["date"] >= pd.to_datetime(from_dt)) &
+        (attendance["date"] <= pd.to_datetime(to_dt))
+    ].copy()
 
-    # Camp logic
-    camp_filtered = []
+    # Remove camp days
+    camp_set = set()
     for _, row in camp_days.iterrows():
-        s, e = row["start_date"], row["end_date"]
-        dates = pd.date_range(s, e).strftime("%Y-%m-%d").tolist()
-        camp_filtered.extend([(row["student_id"], d) for d in dates])
-    camp_filtered = pd.DataFrame(camp_filtered, columns=["student_id", "date"])
+        dates = pd.date_range(row["start_date"], row["end_date"]).strftime("%Y-%m-%d")
+        for d in dates:
+            camp_set.add((row["student_id"], d))
+    filtered["date_str"] = filtered["date"].dt.strftime("%Y-%m-%d")
+    filtered = filtered[~filtered.apply(lambda x: (x["student_id"], x["date_str"]) in camp_set, axis=1)]
 
-    att["is_camp"] = att.apply(
-        lambda x: (x["student_id"], x["date"].strftime("%Y-%m-%d")) in set([tuple(x) for x in camp_filtered.values]), axis=1
-    )
-    att_no_camp = att[att["is_camp"] == False]
+    dept_id = st.session_state.department if st.session_state.role == "dept_admin" else None
+    if dept_id:
+        dept_students = students[students["major_course"] == dept_id]
+    else:
+        dept_students = students
 
-    if st.session_state.role in ["admin", "dept_admin"]:
-        if pd.isna(st.session_state.department) or not isinstance(st.session_state.department, str):
-            st.warning("⚠️ Department not defined for this user in teachers.csv.")
-            dept_students = pd.DataFrame(columns=students.columns)
-        else:
-            dept_prefix = st.session_state.department.strip().upper()[:3]
-            dept_students = students[students["major_course"].str.upper().str.startswith(dept_prefix)]
-
-        summary = att_no_camp.groupby("student_id")["status"].apply(lambda x: (x != "A").sum()).reset_index(name="attended")
-        summary["total"] = att_no_camp.groupby("student_id")["status"].count().values
+    final_data = filtered[filtered["student_id"].isin(dept_students["student_id"])]
+    if final_data.empty:
+        st.info("No attendance records in this range.")
+    else:
+        summary = final_data.groupby("student_id")["status"].agg([
+            ("attended", lambda x: (x != "A").sum()),
+            ("total", "count")
+        ]).reset_index()
         summary["percent"] = (summary["attended"] / summary["total"] * 100).round(1)
-        final = pd.merge(dept_students, summary, on="student_id", how="left").fillna(0)
-        st.dataframe(final[["student_id", "name", "total", "attended", "percent"]])
-        st.download_button("📥 Download Consolidated", final.to_csv(index=False), "consolidated.csv")
-        detailed = att_no_camp[att_no_camp["student_id"].isin(dept_students["student_id"])]
-        st.download_button("📥 Download Detailed Log", detailed.to_csv(index=False), "detailed.csv")
-    elif st.session_state.role == "teacher":
-        my_courses = courses[courses["teacher_id"] == st.session_state.teacher_id]["course_id"].tolist()
-        for c in my_courses:
-            st.write(f"📚 Course: {c}")
-            cdata = att_no_camp[att_no_camp["course_id"] == c]
-            summary = cdata.groupby("student_id")["status"].apply(lambda x: (x != "A").sum()).reset_index(name="attended")
-            summary["total"] = cdata.groupby("student_id")["status"].count().values
-            summary["percent"] = (summary["attended"] / summary["total"] * 100).round(1)
-            merged = pd.merge(students, summary, on="student_id", how="inner")
-            st.dataframe(merged[["student_id", "name", "total", "attended", "percent"]])
-            st.download_button(f"📥 Download Consolidated - {c}", merged.to_csv(index=False), f"{c}_report.csv")
-            st.download_button(f"📥 Detailed Log - {c}", cdata.to_csv(index=False), f"{c}_log.csv")
+        report = pd.merge(dept_students, summary, on="student_id", how="left").fillna(0)
+        report["attended"] = report["attended"].astype(int)
+        report["total"] = report["total"].astype(int)
+
+        st.write("### 📋 Consolidated Report")
+        st.dataframe(report[["student_id", "name", "total", "attended", "percent"]])
+        st.download_button("📥 Download Consolidated", report.to_csv(index=False), "consolidated.csv")
+
+        detailed = pd.merge(final_data, students, on="student_id", how="left")
+        st.write("### 📅 Detailed Log")
+        st.download_button("📥 Download Log", detailed.to_csv(index=False), "log.csv")

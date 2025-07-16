@@ -63,6 +63,35 @@ else:
             del st.session_state[k]
         st.rerun()
 
+# ------------------- Upload Course Selection (Admin/Dept Admin Only) -------------------
+if st.session_state.role in ["admin", "dept_admin"]:
+    st.subheader("🔄 Upload Student Course Selection (One Row Format)")
+
+    uploaded_selection = st.file_uploader("Upload `student_course_selection.csv`", type="csv")
+
+    if uploaded_selection:
+        try:
+            df = pd.read_csv(uploaded_selection)
+            df.to_csv("student_course_selection.csv", index=False)
+
+            enrollment_df = df.melt(
+                id_vars=["student_id"], 
+                value_vars=["major_course", "minor1", "minor2", "mdc", "vac"],
+                var_name="course_type", 
+                value_name="course_id"
+            )[["student_id", "course_id"]].dropna()
+
+            enrollment_df.to_csv("enrollment.csv", index=False)
+
+            st.success("✅ `enrollment.csv` generated successfully!")
+            st.download_button("📥 Download enrollment.csv",
+                               data=enrollment_df.to_csv(index=False),
+                               file_name="enrollment.csv",
+                               mime="text/csv")
+
+        except Exception as e:
+            st.error(f"❌ Failed to process file: {e}")
+
 # ------------------- Take Attendance (Teachers) -------------------
 if st.session_state.role == "teacher":
     st.subheader("📘 Take Attendance")
